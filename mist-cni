@@ -45,6 +45,9 @@ case $CNI_COMMAND in
     MAC="$(ip netns exec "$CNI_CONTAINERID" ip link show eth0 | awk '/ether/ {print $2}')"
     ADDRESS="$IP/24"
 
+    nohup sh -c "(echo \"running daemon...\"; RUST_LOG=info /usr/local/bin/tracing --iface \"$HOST_IFNAME\") > /root/cni.logs 2>&1" &
+    disown
+
     jq --null-input \
       --compact-output \
       --arg iface_name "$CNI_IFNAME" \
