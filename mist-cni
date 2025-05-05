@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+
+LOG_FILE="/root/cni.log"
+
+handle_error() {
+  local exit_code="$?"
+  local message="Error occurred (exit code: $exit_code) at line ${BASH_LINENO[0]} in function ${FUNCNAME[0]}: $BASH_COMMAND"
+  date +"%Y-%m-%d %H:%M:%S" >> "$LOG_FILE"
+  echo "ERROR: $message" >> "$LOG_FILE"
+  exit 1
+}
+
+set -e
+trap handle_error ERR
+
+case $CNI_COMMAND in
+  ADD)
+    POD_CIDR="$(jq -r .podcidr < /dev/stdin)"
+    GATEWAY_IP="${POD_CIDR//0\/24/1}"
+
+    brctl addbr bridge0 2>&- || true
+    ip link set bridge0 up 2>&- || true
+    ip addr add "${GATEWAY_IP}/24" dev bridge0 2>&- || true
+
+    N=$((RANDOM % 254 + 2))
+    IP=${POD_CIDR//0\/24/$N}
+
+    HOST_IFNAME="veth$N"
+    TMP_IFNAME="tmp$(head /dev/urandom | tr -dc a-z0-9 | head -c 8)"
+    ip link add "$TMP_IFNAME" type veth peer name "$HOST_IFNAME"
+    ip link set "$HOST_IFNAME" up
+
+    ip link set "$HOST_IFNAME" master bridge0
+
+    mkdir -p /var/run/netns
+    ln -sfT "$CNI_NETNS" "/var/run/netns/$CNI_CONTAINERID"
+
+    ip link set "$TMP_IFNAME" netns "$CNI_CONTAINERID"
+    ip netns exec "$CNI_CONTAINERID" ip link set "$TMP_IFNAME" name "$CNI_IFNAME"
+
+    ip netns exec "$CNI_CONTAINERID" ip link set "$CNI_IFNAME" up
+    ip netns exec "$CNI_CONTAINERID" ip addr add "$IP/24" dev "$CNI_IFNAME"
+    ip netns exec "$CNI_CONTAINERID" ip route add default via "$GATEWAY_IP"
+
+    MAC="$(ip netns exec "$CNI_CONTAINERID" ip link show eth0 | awk '/ether/ {print $2}')"
+    ADDRESS="$IP/24"
+
+    jq --null-input \
+      --compact-output \
+      --arg iface_name "$CNI_IFNAME" \
+      --arg mac "$MAC" \
+      --arg sandbox "$CNI_NETNS" \
+      --arg address "$ADDRESS" \
+      --arg gateway_ip "$GATEWAY_IP" \
+      '{
+        "cniVersion": "1.0.0",
+        "interfaces": [
+          {
+            "name": $iface_name,
+            "mac": $mac,
+            "sandbox": $sandbox
+          }
+        ],
+        "ips": [
+          {
+            "version": "4",
+            "address": $address,
+            "gateway": $gateway_ip,
+            "interface": 0
+          }
+        ]
+      }'
+  ;;
+  DEL)
+    rm -rf "/var/run/netns/$CNI_CONTAINERID"
+  ;;
+  CHECK)
+  ;;
+  VERSION)
+    jq --null-input  \
+      --compact-output \
+      '{
+        "cniVersion": "1.0.0",
+        "supportedVersions": [ "0.3.0", "0.3.1", "0.4.0", "1.0.0" ]
+      }'
+  ;;
+  *)
+    echo "Not supported: $CNI_COMMAND"
+    exit 1
+  ;;
+esac
