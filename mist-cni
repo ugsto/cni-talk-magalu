@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 LOG_FILE="/root/cni.log"
+MONITOR_DIR="/run/cni-monitored-interfaces"
 
 handle_error() {
   local exit_code="$?"
@@ -45,8 +46,8 @@ case $CNI_COMMAND in
     MAC="$(ip netns exec "$CNI_CONTAINERID" ip link show eth0 | awk '/ether/ {print $2}')"
     ADDRESS="$IP/24"
 
-    nohup sh -c "(echo \"running daemon...\"; RUST_LOG=info /usr/local/bin/tracing --iface \"$HOST_IFNAME\") > /root/cni.logs 2>&1" &
-    disown
+    mkdir -p "$MONITOR_DIR"
+    true > "$MONITOR_DIR/$HOST_IFNAME"
 
     jq --null-input \
       --compact-output \
@@ -75,6 +76,7 @@ case $CNI_COMMAND in
       }'
   ;;
   DEL)
+    rm -rf "${MONITOR_DIR:?}/$CNI_IFNAME"
     rm -rf "/var/run/netns/$CNI_CONTAINERID"
   ;;
   CHECK)
