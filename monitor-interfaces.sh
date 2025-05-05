@@ -22,7 +22,7 @@ start_tracing() {
   fi
 
   echo "Starting tracing for interface: $iface" >> "$LOG_FILE"
-  nohup RUST_LOG=info "$TRACING_BIN" --iface "$iface" > "/root/cni-tracing-$iface.log" 2>&1 &
+  RUST_LOG=info nohup "$TRACING_BIN" --iface "$iface" > "/root/cni-tracing-$iface.log" 2>&1 &
   echo $! > "$PID_FILE"
   echo "Tracing process for $iface started with PID: $(cat "$PID_FILE")" >> "$LOG_FILE"
 }
