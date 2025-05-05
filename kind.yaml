@@ -4,3 +4,4 @@ networking:
   disableDefaultCNI: true
 nodes:
   - role: control-plane
+    image: ugsto/mist-cni-kind-node:latest
