@@ -65,4 +65,3 @@ inotifywait -m -q -e create,delete "$MONITOR_DIR" |
         ;;
     esac
   done
-
